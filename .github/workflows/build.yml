@@ -48,4 +48,4 @@ jobs:
         with:
           name: THE-LAST-SURVIVOR-X360
           path: build-game/the_last_survivor.xex
-          
+          if-no-files-found: error
