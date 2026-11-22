@@ -1,31 +1,18 @@
-# Diseño — Demo 0.1
+# Diseño — THE LAST SURVIVOR X360
 
-## Premisa
-En una ciudad ficticia abandonada, una persona superviviente debe encontrar una llave de acceso y llegar a una zona segura mientras evita a un infectado.
+## Concepto
+Juego original de terror y supervivencia en tercera persona, con exploración,
+recursos limitados y encuentros con enemigos.
 
-## Cámara y presentación
-- Tercera persona, cámara detrás del protagonista.
-- Objetivo inicial: 1280×720, con calidad y carga ajustadas al hardware.
-- Estética: ruinas, vegetación, niebla ligera y luz fría.
-- Prioridad: estabilidad y tasa de imágenes constante antes que detalle.
+## Primera demo (objetivo)
+1. Arranque y pantalla de título.
+2. Escenario pequeño de prueba.
+3. Movimiento del jugador.
+4. Cámara en tercera persona.
+5. Un enemigo básico.
+6. Sonido y música originales, añadidos después de validar el renderizado.
 
-## Contenido previsto para la primera demo jugable
-- Un pequeño escenario exterior.
-- Un personaje original.
-- Un enemigo con persecución sencilla.
-- Una llave y una puerta de salida.
-- Barra de vida y texto de objetivo.
-- Sonidos originales o con licencia adecuada.
-
-## Controles previstos
-- Stick izquierdo: caminar/correr.
-- Stick derecho: orientar cámara.
-- A: interactuar/recoger.
-- X: acción contextual.
-- B: esquivar/volver.
-- LB: apuntar (cuando exista sistema de combate).
-- RT: disparar (cuando exista sistema de combate).
-- BACK: salir de la demo.
-
-## Límites de la demo 0.1
-Esta entrega solo prepara la base de arranque y lectura del mando. Todavía no hay geometría 3D, animaciones, IA, armas, audio ni guardado.
+## Restricciones
+- No reutilizar personajes, mapas, música, modelos ni texturas de juegos comerciales.
+- Priorizar rendimiento y memoria adecuados para Xbox 360.
+- Añadir funciones por etapas y probar cada compilación.

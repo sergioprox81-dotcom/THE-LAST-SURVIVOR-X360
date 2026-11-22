@@ -1,0 +1,7 @@
+build/
+build-game/
+out/
+*.o
+*.obj
+*.xex
+*.elf

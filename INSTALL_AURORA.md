@@ -1,11 +1,8 @@
-# Instalación en Aurora (cuando exista un XEX compilado)
+# Instalación en Aurora (cuando exista un XEX válido)
 
-1. No cambies ni sobrescribas archivos del sistema o de Aurora.
-2. Copia la carpeta del juego al HDD interno, por ejemplo:
-   `Hdd1:\Games\THE_LAST_SURVIVOR\`
-3. Coloca dentro el ejecutable generado con el nombre:
-   `default.xex`
-4. En Aurora, añade/escanea esa ruta como contenido de aplicaciones/juegos.
-5. Ejecuta primero una compilación de prueba y comprueba que vuelve a Aurora al salir.
+1. Copia la carpeta del juego al disco interno o USB de la Xbox 360.
+2. En Aurora, añade o actualiza la ruta de escaneo donde esté la carpeta.
+3. Ejecuta el archivo XEX generado y probado.
 
-**Este paquete no incluye `default.xex` porque no se ha compilado ni probado en una Xbox 360.**
+AVISO: este paquete todavía no contiene un XEX. No cambies archivos del sistema
+ni instales un paquete VPK: VPK es un formato de PS Vita, no de Xbox 360.
