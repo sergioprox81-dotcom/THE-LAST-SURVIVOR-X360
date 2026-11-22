@@ -25,7 +25,7 @@ jobs:
       - name: Build Xbox 360 toolchain
         run: |
           cd "$HOME/xsdk"
-          PREFIX="$HOME/xsdk-gcc" WORK="$HOME/xsdk-gcc-work" JOBS=2 tools/toolchain/build.sh
+          PREFIX="$HOME/xsdk-gcc" WORK="$HOME/xsdk-gcc-work" JOBS=2 bash tools/toolchain/build.sh
 
       - name: Build xsdk
         run: |
