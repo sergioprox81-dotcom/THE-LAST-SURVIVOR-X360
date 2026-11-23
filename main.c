@@ -249,8 +249,50 @@ static Matrix multiply(const Matrix *a, const Matrix *b)
     return out;
 }
 
-static Matrix camera_matrix(float aspect)
+static Matrix camera_matrix(float aspect, float yaw, float pitch)
 {
+    float f = 1.0f / tanf(FOV * 0.5f);
+    float q = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
+
+    const Matrix projection = {{
+        f / aspect, 0, 0, 0,
+        0, f, 0, 0,
+        0, 0, q, -1,
+        0, 0, NEAR_PLANE * q, 0
+    }};
+
+    float cp = cosf(pitch);
+    float sp = sinf(pitch);
+    float cy = cosf(yaw);
+    float sy = sinf(yaw);
+
+    const Matrix turn_x = {{
+        1, 0, 0, 0,
+        0, cp, sp, 0,
+        0, -sp, cp, 0,
+        0, 0, 0, 1
+    }};
+
+    const Matrix turn_y = {{
+        cy, 0, -sy, 0,
+        0, 1, 0, 0,
+        sy, 0, cy, 0,
+        0, 0, 0, 1
+    }};
+
+    const Matrix away = {{
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, -1.7f, -CAMERA_DISTANCE, 1
+    }};
+
+    Matrix rotation = multiply(&turn_x, &turn_y);
+    Matrix position = multiply(&away, &rotation);
+
+    return multiply(&projection, &position);
+}
+
     float f = 1.0f / tanf(FOV * 0.5f);
     float q = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
 
@@ -405,6 +447,90 @@ static void draw_game(
 
 static void run_game(Game *game, uint32_t width, uint32_t height)
 {
+    float player_x = 0.0f;
+    float player_z = 0.0f;
+
+    float camera_yaw = 0.0f;
+    float camera_pitch = 0.0f;
+
+    const float DEAD_ZONE = 8000.0f;
+    const float CAMERA_SPEED = 0.045f;
+    const float PITCH_LIMIT = 0.65f;
+
+    for (;;) {
+        INPUT_STATE input = {0};
+
+        if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
+
+            if (input.gamepad.buttons & INPUT_GAMEPAD_BACK) {
+                break;
+            }
+
+            float lx = input.gamepad.thumb_lx;
+            float ly = input.gamepad.thumb_ly;
+
+            float rx = input.gamepad.thumb_rx;
+            float ry = input.gamepad.thumb_ry;
+
+            if (fabsf(rx) > DEAD_ZONE) {
+                camera_yaw -= rx / 32768.0f * CAMERA_SPEED;
+            }
+
+            if (fabsf(ry) > DEAD_ZONE) {
+                camera_pitch += ry / 32768.0f * CAMERA_SPEED;
+            }
+
+            if (camera_pitch > PITCH_LIMIT)
+                camera_pitch = PITCH_LIMIT;
+
+            if (camera_pitch < -PITCH_LIMIT)
+                camera_pitch = -PITCH_LIMIT;
+
+            float forward = 0.0f;
+            float sideways = 0.0f;
+
+            if (fabsf(ly) > DEAD_ZONE)
+                forward = ly / 32768.0f;
+
+            if (fabsf(lx) > DEAD_ZONE)
+                sideways = lx / 32768.0f;
+
+            float sin_yaw = sinf(camera_yaw);
+            float cos_yaw = cosf(camera_yaw);
+
+            player_x +=
+                (sideways * cos_yaw - forward * sin_yaw)
+                * MOVE_SPEED;
+
+            player_z +=
+                (sideways * sin_yaw + forward * cos_yaw)
+                * MOVE_SPEED;
+        }
+
+        build_character(game, player_x, player_z);
+
+        uint32_t address;
+
+        NTSTATUS status = xsdk_present_begin(
+            &address, BEGIN_TIMEOUT_MS);
+
+        if (!NT_SUCCESS(status)) {
+            xsdk_log_write("Error preparando pantalla");
+            return;
+        }
+
+        Matrix camera = camera_matrix(
+            (float)width / (float)height,
+            camera_yaw,
+            camera_pitch
+        );
+
+        draw_game(
+            game, &camera, address, width, height);
+
+        xsdk_present_end();
+    }
+}
     float player_x = 0.0f;
     float player_z = 0.0f;
 
