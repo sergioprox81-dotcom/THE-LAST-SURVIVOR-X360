@@ -22,7 +22,12 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/xenosworks/xsdk.git "$HOME/xsdk"
 
-            - name: Build glslang for Xbox shaders
+      - name: Build Xbox 360 toolchain
+        run: |
+          cd "$HOME/xsdk"
+          PREFIX="$HOME/xsdk-gcc" WORK="$HOME/xsdk-gcc-work" JOBS=2 bash tools/toolchain/build.sh
+
+      - name: Build glslang for Xbox shaders
         run: |
           git clone --depth 1 --branch xenon https://github.com/xenosworks/glslang-xenon.git "$HOME/glslang-xenon"
           cd "$HOME/glslang-xenon"
@@ -58,3 +63,4 @@ jobs:
           name: THE-LAST-SURVIVOR-X360
           path: build-game/the_last_survivor.xex
           if-no-files-found: error
+          
