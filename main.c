@@ -14,47 +14,36 @@
 #include "xsdk/texture.h"
 
 enum {
-    SPLASH_MS = 2000,
+    SPLASH_MS = 1500,
     BUFFERS = 2,
     SWAP_INTERVAL = 1,
     BEGIN_TIMEOUT_MS = 5000,
     CLEAR_ARGB = 0xFF202020,
+    BOX_COUNT = 8,
     FACES = 6,
-    VERTICES = FACES * 4,
-    INDICES = FACES * 6,
+    VERTICES_PER_BOX = 24,
+    INDICES_PER_BOX = 36,
+    VERTICES = BOX_COUNT * VERTICES_PER_BOX,
+    INDICES = BOX_COUNT * INDICES_PER_BOX,
     VERTEX_FLOATS = 8,
     STRIDE_BYTES = VERTEX_FLOATS * 4,
     COLOR_OFFSET_BYTES = 12,
     UV_OFFSET_BYTES = 24,
     VERTICES_BYTES = VERTICES * STRIDE_BYTES,
     INDICES_BYTES = INDICES * 2,
-    TEXTURE_SIZE = 64,
-    CHECK_TEXELS = 8
+    TEXTURE_SIZE = 8
 };
 
-static const int32_t STICK_DEAD_ZONE = 8000;
-static const float TURN_PER_FRAME = 0.05f;
-static const float CAMERA_DISTANCE = 3.0f;
-static const float FIELD_OF_VIEW = 1.0f;
+static const float MOVE_SPEED = 0.045f;
+static const float CAMERA_DISTANCE = 6.0f;
+static const float FOV = 1.0f;
 static const float NEAR_PLANE = 0.1f;
-static const float FAR_PLANE = 10.0f;
+static const float FAR_PLANE = 100.0f;
 
-static const float faces[FACES][3][3] = {
-    {{ 1, 0, 0}, { 0, 0,-1}, { 0, 1, 0}},
-    {{-1, 0, 0}, { 0, 0, 1}, { 0, 1, 0}},
-    {{ 0, 1, 0}, { 1, 0, 0}, { 0, 0,-1}},
-    {{ 0,-1, 0}, { 1, 0, 0}, { 0, 0, 1}},
-    {{ 0, 0, 1}, { 1, 0, 0}, { 0, 1, 0}},
-    {{ 0, 0,-1}, {-1, 0, 0}, { 0, 1, 0}}
-};
-
-static const float face_colours[FACES][3] = {
-    {0, 1, 0},
-    {1, 1, 0},
-    {0, 1, 1},
-    {1, 0, 1},
-    {1, 0, 0},
-    {0, 0, 1}
+static const float face_normals[FACES][3] = {
+    { 1, 0, 0}, {-1, 0, 0},
+    { 0, 1, 0}, { 0,-1, 0},
+    { 0, 0, 1}, { 0, 0,-1}
 };
 
 static const XsdkVertexElement layout[] = {
@@ -87,7 +76,7 @@ typedef struct {
     XsdkDepthStencilState depth;
     volatile uint32_t *vertices;
     volatile uint32_t *indices;
-} Cube;
+} Game;
 
 static void write_gpu(
     volatile uint32_t *memory,
@@ -106,59 +95,223 @@ static void write_gpu(
     );
 }
 
-static bool make_mesh(Cube *cube)
+static void add_box(
+    float vertices[VERTICES][VERTEX_FLOATS],
+    uint16_t indices[INDICES],
+    uint32_t box,
+    float x, float y, float z,
+    float sx, float sy, float sz,
+    float r, float g, float b)
 {
-    float vertices[VERTICES][VERTEX_FLOATS];
-    uint16_t indices[INDICES];
+    static const float corners[4][2] = {
+        {-1,-1}, {1,-1}, {-1,1}, {1,1}
+    };
 
-    for (uint32_t f = 0; f < FACES; f++) {
+    static const uint16_t quad[6] = {
+        0,1,2, 2,1,3
+    };
+
+    for (uint32_t face = 0; face < FACES; face++) {
+        uint32_t base = box * VERTICES_PER_BOX + face * 4;
+
         for (uint32_t c = 0; c < 4; c++) {
-            const float across = c & 1 ? 1.0f : -1.0f;
-            const float up = c & 2 ? 1.0f : -1.0f;
-            float *v = vertices[f * 4 + c];
+            float *v = vertices[base + c];
 
-            for (uint32_t axis = 0; axis < 3; axis++) {
-                v[axis] = 0.5f * (
-                    faces[f][0][axis] +
-                    across * faces[f][1][axis] +
-                    up * faces[f][2][axis]
-                );
+            float a = corners[c][0];
+            float d = corners[c][1];
 
-                v[3 + axis] = face_colours[f][axis];
+            switch (face) {
+                case 0:
+                    v[0] = x + sx;
+                    v[1] = y + d * sy;
+                    v[2] = z + a * sz;
+                    break;
+                case 1:
+                    v[0] = x - sx;
+                    v[1] = y + d * sy;
+                    v[2] = z - a * sz;
+                    break;
+                case 2:
+                    v[0] = x + a * sx;
+                    v[1] = y + sy;
+                    v[2] = z - d * sz;
+                    break;
+                case 3:
+                    v[0] = x + a * sx;
+                    v[1] = y - sy;
+                    v[2] = z + d * sz;
+                    break;
+                case 4:
+                    v[0] = x + a * sx;
+                    v[1] = y + d * sy;
+                    v[2] = z + sz;
+                    break;
+                default:
+                    v[0] = x - a * sx;
+                    v[1] = y + d * sy;
+                    v[2] = z - sz;
+                    break;
             }
 
+            v[3] = r;
+            v[4] = g;
+            v[5] = b;
             v[6] = c & 1 ? 1.0f : 0.0f;
             v[7] = c & 2 ? 0.0f : 1.0f;
         }
 
-        const uint16_t base = (uint16_t)(f * 4);
+        uint16_t start = (uint16_t)base;
 
-        const uint16_t quad[6] = {
-            base, base + 1, base + 2,
-            base + 2, base + 1, base + 3
-        };
+        for (uint32_t i = 0; i < 6; i++) {
+            indices[box * INDICES_PER_BOX + face * 6 + i] =
+                start + quad[i];
+        }
+    }
+}
 
-        memcpy(&indices[f * 6], quad, sizeof quad);
+static void build_character(Game *game, float px, float pz)
+{
+    float vertices[VERTICES][VERTEX_FLOATS];
+    uint16_t indices[INDICES];
+
+    memset(vertices, 0, sizeof vertices);
+    memset(indices, 0, sizeof indices);
+
+    /* Suelo */
+    add_box(vertices, indices, 0,
+        -px, -0.18f, -pz,
+        30.0f, 0.15f, 30.0f,
+        0.22f, 0.24f, 0.22f);
+
+    /* Torso */
+    add_box(vertices, indices, 1,
+        0, 1.15f, 0,
+        0.30f, 0.48f, 0.18f,
+        0.25f, 0.32f, 0.22f);
+
+    /* Cabeza */
+    add_box(vertices, indices, 2,
+        0, 1.85f, 0,
+        0.19f, 0.22f, 0.18f,
+        0.72f, 0.52f, 0.35f);
+
+    /* Brazo izquierdo */
+    add_box(vertices, indices, 3,
+        -0.39f, 1.18f, 0,
+        0.11f, 0.40f, 0.12f,
+        0.25f, 0.32f, 0.22f);
+
+    /* Brazo derecho */
+    add_box(vertices, indices, 4,
+        0.39f, 1.18f, 0,
+        0.11f, 0.40f, 0.12f,
+        0.25f, 0.32f, 0.22f);
+
+    /* Pierna izquierda */
+    add_box(vertices, indices, 5,
+        -0.16f, 0.48f, 0,
+        0.13f, 0.38f, 0.14f,
+        0.12f, 0.14f, 0.18f);
+
+    /* Pierna derecha */
+    add_box(vertices, indices, 6,
+        0.16f, 0.48f, 0,
+        0.13f, 0.38f, 0.14f,
+        0.12f, 0.14f, 0.18f);
+
+    /* Caja del escenario */
+    add_box(vertices, indices, 7,
+        2.5f - px, 0.45f, 3.0f - pz,
+        0.65f, 0.45f, 0.65f,
+        0.28f, 0.20f, 0.13f);
+
+    write_gpu(game->vertices, vertices, VERTICES_BYTES);
+    write_gpu(game->indices, indices, INDICES_BYTES);
+}
+
+static Matrix multiply(const Matrix *a, const Matrix *b)
+{
+    Matrix out;
+
+    for (uint32_t c = 0; c < 4; c++) {
+        for (uint32_t r = 0; r < 4; r++) {
+            float sum = 0;
+
+            for (uint32_t k = 0; k < 4; k++) {
+                sum += a->m[k * 4 + r] *
+                       b->m[c * 4 + k];
+            }
+
+            out.m[c * 4 + r] = sum;
+        }
     }
 
-    cube->vertices = xsdk_gpu_alloc(VERTICES_BYTES);
-    cube->indices = xsdk_gpu_alloc(INDICES_BYTES);
+    return out;
+}
 
-    if (!cube->vertices || !cube->indices) {
-        xsdk_log_write("Error reservando memoria del cubo");
+static Matrix camera_matrix(float aspect)
+{
+    float f = 1.0f / tanf(FOV * 0.5f);
+    float q = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
+
+    const Matrix projection = {{
+        f / aspect, 0, 0, 0,
+        0, f, 0, 0,
+        0, 0, q, -1,
+        0, 0, NEAR_PLANE * q, 0
+    }};
+
+    const Matrix camera = {{
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, -1.7f, -CAMERA_DISTANCE, 1
+    }};
+
+    return multiply(&projection, &camera);
+}
+
+static bool make_game(Game *game)
+{
+    NTSTATUS status = xsdk_shader_load(
+        &game->vertex,
+        cube_vert.container,
+        cube_vert.container_bytes
+    );
+
+    if (NT_SUCCESS(status)) {
+        status = xsdk_shader_load(
+            &game->pixel,
+            cube_frag.container,
+            cube_frag.container_bytes
+        );
+    }
+
+    if (NT_SUCCESS(status)) {
+        status = xsdk_shader_set_vertex_layout(
+            &game->vertex,
+            layout,
+            sizeof layout / sizeof layout[0],
+            (const uint32_t[]){ STRIDE_BYTES }
+        );
+    }
+
+    if (!NT_SUCCESS(status)) {
+        xsdk_log_write("Error cargando shaders: 0x%08X",
+            (unsigned)status);
         return false;
     }
 
-    write_gpu(cube->vertices, vertices, VERTICES_BYTES);
-    write_gpu(cube->indices, indices, INDICES_BYTES);
+    game->vertices = xsdk_gpu_alloc(VERTICES_BYTES);
+    game->indices = xsdk_gpu_alloc(INDICES_BYTES);
 
-    return true;
-}
+    if (!game->vertices || !game->indices) {
+        xsdk_log_write("Error reservando memoria 3D");
+        return false;
+    }
 
-static bool make_texture(Cube *cube)
-{
-    NTSTATUS status = xsdk_texture_create(
-        &cube->texture,
+    NTSTATUS texture_status = xsdk_texture_create(
+        &game->texture,
         XSDK_FORMAT_A8R8G8B8,
         TEXTURE_SIZE,
         TEXTURE_SIZE,
@@ -166,8 +319,8 @@ static bool make_texture(Cube *cube)
         true
     );
 
-    if (!NT_SUCCESS(status)) {
-        xsdk_log_write("Error creando textura: 0x%08X", (unsigned)status);
+    if (!NT_SUCCESS(texture_status)) {
+        xsdk_log_write("Error creando textura");
         return false;
     }
 
@@ -175,23 +328,16 @@ static bool make_texture(Cube *cube)
 
     for (uint32_t y = 0; y < TEXTURE_SIZE; y++) {
         for (uint32_t x = 0; x < TEXTURE_SIZE; x++) {
-            texels[y][x] =
-                (x / CHECK_TEXELS + y / CHECK_TEXELS) % 2
-                ? 0xFF808080
-                : 0xFFFFFFFF;
+            texels[y][x] = 0xFFFFFFFF;
         }
     }
 
     xsdk_texture_upload(
-        &cube->texture,
-        0,
-        texels,
-        sizeof texels[0]
-    );
+        &game->texture, 0, texels, sizeof texels[0]);
 
     xsdk_gpu_invalidate(
-        cube->texture.address,
-        cube->texture.size_bytes
+        game->texture.address,
+        game->texture.size_bytes
     );
 
     const XsdkSampler sampler = {
@@ -202,40 +348,7 @@ static bool make_texture(Cube *cube)
         .address_v = XSDK_ADDRESS_WRAP
     };
 
-    xsdk_texture_sampler_state(&cube->sampler, &sampler);
-
-    return true;
-}
-
-static bool make_cube(Cube *cube)
-{
-    NTSTATUS status = xsdk_shader_load(
-        &cube->vertex,
-        cube_vert.container,
-        cube_vert.container_bytes
-    );
-
-    if (NT_SUCCESS(status)) {
-        status = xsdk_shader_load(
-            &cube->pixel,
-            cube_frag.container,
-            cube_frag.container_bytes
-        );
-    }
-
-    if (NT_SUCCESS(status)) {
-        status = xsdk_shader_set_vertex_layout(
-            &cube->vertex,
-            layout,
-            sizeof layout / sizeof layout[0],
-            (const uint32_t[]){ STRIDE_BYTES }
-        );
-    }
-
-    if (!NT_SUCCESS(status)) {
-        xsdk_log_write("Error cargando shaders: 0x%08X", (unsigned)status);
-        return false;
-    }
+    xsdk_texture_sampler_state(&game->sampler, &sampler);
 
     const XsdkDepthStencil depth = {
         .depth_test = true,
@@ -243,95 +356,21 @@ static bool make_cube(Cube *cube)
         .depth_compare = XSDK_COMPARE_LESS_EQUAL
     };
 
-    xsdk_gpu_depth_stencil_state(&cube->depth, &depth);
+    xsdk_gpu_depth_stencil_state(&game->depth, &depth);
 
-    return make_mesh(cube) && make_texture(cube);
+    return true;
 }
 
-static Matrix multiply(const Matrix *a, const Matrix *b)
-{
-    Matrix product;
-
-    for (uint32_t column = 0; column < 4; column++) {
-        for (uint32_t row = 0; row < 4; row++) {
-            float sum = 0.0f;
-
-            for (uint32_t k = 0; k < 4; k++) {
-                sum += a->m[k * 4 + row] *
-                       b->m[column * 4 + k];
-            }
-
-            product.m[column * 4 + row] = sum;
-        }
-    }
-
-    return product;
-}
-
-static Matrix cube_matrix(float yaw, float pitch, float aspect)
-{
-    const float f = 1.0f / tanf(FIELD_OF_VIEW / 2.0f);
-    const float fx = f / aspect;
-    const float fz = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
-
-    const Matrix perspective = {{
-        fx, 0, 0, 0,
-        0, f, 0, 0,
-        0, 0, fz, -1,
-        0, 0, NEAR_PLANE * fz, 0
-    }};
-
-    const Matrix away = {{
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, -CAMERA_DISTANCE, 1
-    }};
-
-    const float cp = cosf(pitch);
-    const float sp = sinf(pitch);
-
-    const Matrix turn_x = {{
-        1, 0, 0, 0,
-        0, cp, sp, 0,
-        0, -sp, cp, 0,
-        0, 0, 0, 1
-    }};
-
-    const float cy = cosf(yaw);
-    const float sy = sinf(yaw);
-
-    const Matrix turn_y = {{
-        cy, 0, -sy, 0,
-        0, 1, 0, 0,
-        sy, 0, cy, 0,
-        0, 0, 0, 1
-    }};
-
-    const Matrix turned = multiply(&turn_x, &turn_y);
-    const Matrix placed = multiply(&away, &turned);
-
-    return multiply(&perspective, &placed);
-}
-
-static float stick(int16_t value)
-{
-    return value > STICK_DEAD_ZONE ||
-           value < -STICK_DEAD_ZONE
-           ? value / 32768.0f
-           : 0.0f;
-}
-
-static void draw(
-    const Cube *cube,
+static void draw_game(
+    Game *game,
     const Matrix *matrix,
     uint32_t address,
     uint32_t width,
     uint32_t height)
 {
     xsdk_gpu_set_target(width, height);
-    xsdk_gpu_set_depth_stencil(&cube->depth);
-    xsdk_gpu_set_shaders(&cube->vertex, &cube->pixel);
+    xsdk_gpu_set_depth_stencil(&game->depth);
+    xsdk_gpu_set_shaders(&game->vertex, &game->pixel);
 
     xsdk_built_shader_set_literals(&cube_vert);
     xsdk_built_shader_set_literals(&cube_frag);
@@ -344,76 +383,76 @@ static void draw(
 
     xsdk_gpu_set_texture(
         CUBE_FRAG_SAMPLER_0_0,
-        &cube->texture,
-        &cube->sampler
+        &game->texture,
+        &game->sampler
     );
 
     xsdk_gpu_set_vertices(
         0,
-        xsdk_gpu_address(cube->vertices),
+        xsdk_gpu_address(game->vertices),
         VERTICES_BYTES
     );
 
     xsdk_gpu_draw_indexed(
         XSDK_PRIMITIVE_TRIANGLE_LIST,
-        xsdk_gpu_address(cube->indices),
+        xsdk_gpu_address(game->indices),
         INDICES,
         false
     );
 
-    xsdk_gpu_resolve(
-        address,
-        width,
-        height,
-        CLEAR_ARGB
-    );
+    xsdk_gpu_resolve(address, width, height, CLEAR_ARGB);
 }
 
-static void run_game(
-    const Cube *cube,
-    uint32_t width,
-    uint32_t height)
+static void run_game(Game *game, uint32_t width, uint32_t height)
 {
-    float yaw = 0.0f;
-    float pitch = 0.0f;
+    float player_x = 0.0f;
+    float player_z = 0.0f;
+
+    const Matrix camera = camera_matrix(
+        (float)width / (float)height);
 
     for (;;) {
-        INPUT_STATE input = { 0 };
+        INPUT_STATE input = {0};
 
-        if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS &&
-            (input.gamepad.buttons & INPUT_GAMEPAD_BACK)) {
-            break;
+        if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
+            if (input.gamepad.buttons & INPUT_GAMEPAD_BACK) {
+                break;
+            }
+
+            float x = input.gamepad.thumb_lx / 32768.0f;
+            float z = input.gamepad.thumb_ly / 32768.0f;
+
+            if (x > 0.20f || x < -0.20f) {
+                player_x += x * MOVE_SPEED;
+            }
+
+            if (z > 0.20f || z < -0.20f) {
+                player_z += z * MOVE_SPEED;
+            }
         }
 
-        yaw += TURN_PER_FRAME * stick(input.gamepad.thumb_lx);
-        pitch -= TURN_PER_FRAME * stick(input.gamepad.thumb_ly);
+        build_character(game, player_x, player_z);
 
         uint32_t address;
 
         NTSTATUS status = xsdk_present_begin(
-            &address,
-            BEGIN_TIMEOUT_MS
-        );
+            &address, BEGIN_TIMEOUT_MS);
 
         if (!NT_SUCCESS(status)) {
-            xsdk_log_write("Error preparando pantalla: 0x%08X", (unsigned)status);
+            xsdk_log_write("Error preparando pantalla");
             return;
         }
 
-        const Matrix matrix = cube_matrix(
-            yaw,
-            pitch,
-            (float)width / (float)height
-        );
+        draw_game(
+            game, &camera, address, width, height);
 
-        draw(cube, &matrix, address, width, height);
         xsdk_present_end();
     }
 }
 
 int main(void)
 {
-    xsdk_log_write("THE LAST SURVIVOR: cubo 3D");
+    xsdk_log_write("THE LAST SURVIVOR: protagonista 3D");
 
     NTSTATUS status = xsdk_splash_show(SPLASH_MS);
 
@@ -424,13 +463,13 @@ int main(void)
     status = xsdk_gpu_open();
 
     if (!NT_SUCCESS(status)) {
-        xsdk_log_write("Error iniciando GPU: 0x%08X", (unsigned)status);
+        xsdk_log_write("Error iniciando GPU");
         return 1;
     }
 
-    static Cube cube;
+    static Game game;
 
-    if (!make_cube(&cube)) {
+    if (!make_game(&game)) {
         return 1;
     }
 
@@ -446,34 +485,25 @@ int main(void)
     );
 
     if (!NT_SUCCESS(status)) {
-        xsdk_log_write("Error abriendo pantalla: 0x%08X", (unsigned)status);
+        xsdk_log_write("Error abriendo pantalla");
         return 1;
     }
 
-    xsdk_log_write(
-        "Pantalla lista: %u x %u",
-        (unsigned)width,
-        (unsigned)height
-    );
+    xsdk_log_write("Protagonista 3D iniciado");
 
-    run_game(&cube, width, height);
+    run_game(&game, width, height);
 
     xsdk_present_close();
 
-    xsdk_texture_free(&cube.texture);
-    xsdk_gpu_free((void *)cube.indices);
-    xsdk_gpu_free((void *)cube.vertices);
+    xsdk_texture_free(&game.texture);
+    xsdk_gpu_free((void *)game.indices);
+    xsdk_gpu_free((void *)game.vertices);
+    xsdk_shader_free(&game.pixel);
+    xsdk_shader_free(&game.vertex);
 
-    xsdk_shader_free(&cube.pixel);
-    xsdk_shader_free(&cube.vertex);
+    xsdk_gpu_close();
 
-    status = xsdk_gpu_close();
-
-    if (!NT_SUCCESS(status)) {
-        xsdk_log_write("Error cerrando GPU: 0x%08X", (unsigned)status);
-    }
-
-    xsdk_log_write("THE LAST SURVIVOR: cubo 3D terminado");
+    xsdk_log_write("THE LAST SURVIVOR terminado");
 
     return 0;
 }
