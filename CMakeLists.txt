@@ -12,8 +12,8 @@ set_target_properties(the_last_survivor PROPERTIES
 )
 
 xsdk_add_shaders(the_last_survivor
-    triangle.vert
-    triangle.frag
+    cube.vert
+    cube.frag
 )
 
 xsdk_add_xex(the_last_survivor
