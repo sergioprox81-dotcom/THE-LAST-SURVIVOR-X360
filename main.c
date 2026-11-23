@@ -42,6 +42,10 @@ static const float NEAR_PLANE = 0.1f;
 static const float FAR_PLANE = 100.0f;
 static const float PLAYER_RADIUS = 0.38f;
 
+static const float JUMP_SPEED = 0.19f;
+static const float GRAVITY = 0.009f;
+static const float MAX_JUMP_HEIGHT = 1.5f;
+
 static const XsdkVertexElement layout[] = {
     {
         .usage = XSDK_USAGE_POSITION,
@@ -81,7 +85,6 @@ typedef struct {
     float half_z;
 } Obstacle;
 
-/* Cuatro obstáculos físicos del escenario. */
 static const Obstacle obstacles[] = {
     {-2.0f,  2.0f, 0.65f, 0.65f},
     { 2.5f,  3.0f, 0.65f, 0.65f},
@@ -122,7 +125,6 @@ static void add_box(
         0,1,2, 2,1,3
     };
 
-    /* Iluminación sencilla por cara. */
     static const float shade[FACES] = {
         0.62f, 0.48f, 1.00f,
         0.30f, 0.72f, 0.55f
@@ -186,7 +188,6 @@ static void add_box(
     }
 }
 
-/* Comprueba límites de habitación y cajas. */
 static bool collides(float x, float z)
 {
     if (x < -5.55f || x > 5.55f ||
@@ -208,7 +209,12 @@ static bool collides(float x, float z)
     return false;
 }
 
-static void build_scene(Game *game, float px, float pz)
+static void build_scene(
+    Game *game,
+    float px,
+    float pz,
+    float player_y,
+    float walk_phase)
 {
     float vertices[VERTICES][VERTEX_FLOATS];
     uint16_t indices[INDICES];
@@ -216,105 +222,99 @@ static void build_scene(Game *game, float px, float pz)
     memset(vertices, 0, sizeof vertices);
     memset(indices, 0, sizeof indices);
 
-    /* 0 - Suelo de la habitación. */
     add_box(vertices, indices, 0,
         -px, -0.18f, -pz,
         6.0f, 0.15f, 8.0f,
         0.25f, 0.27f, 0.27f);
 
-    /* 1 - Techo. */
     add_box(vertices, indices, 1,
         -px, 3.15f, -pz,
         6.0f, 0.15f, 8.0f,
         0.20f, 0.22f, 0.25f);
 
-    /* 2 - Pared izquierda. */
     add_box(vertices, indices, 2,
         -6.0f - px, 1.48f, -pz,
         0.25f, 1.65f, 8.0f,
         0.25f, 0.29f, 0.30f);
 
-    /* 3 - Pared derecha. */
     add_box(vertices, indices, 3,
         6.0f - px, 1.48f, -pz,
         0.25f, 1.65f, 8.0f,
         0.25f, 0.29f, 0.30f);
 
-    /* 4 - Pared del fondo. */
     add_box(vertices, indices, 4,
         -px, 1.48f, 8.0f - pz,
         6.0f, 1.65f, 0.25f,
         0.22f, 0.25f, 0.29f);
 
-    /* 5 - Pared frontal. */
     add_box(vertices, indices, 5,
         -px, 1.48f, -8.0f - pz,
         6.0f, 1.65f, 0.25f,
         0.22f, 0.25f, 0.29f);
 
-    /* 6 - Puerta oscura en la pared frontal. */
     add_box(vertices, indices, 6,
         -px, 1.05f, -7.70f - pz,
         0.85f, 1.05f, 0.08f,
         0.12f, 0.055f, 0.045f);
 
-    /* 7 - Caja izquierda. */
     add_box(vertices, indices, 7,
         -2.0f - px, 0.45f, 2.0f - pz,
         0.65f, 0.45f, 0.65f,
         0.30f, 0.19f, 0.10f);
 
-    /* 8 - Caja derecha. */
     add_box(vertices, indices, 8,
         2.5f - px, 0.45f, 3.0f - pz,
         0.65f, 0.45f, 0.65f,
         0.32f, 0.20f, 0.11f);
 
-    /* 9 - Caja del fondo. */
     add_box(vertices, indices, 9,
         -3.0f - px, 0.45f, 5.0f - pz,
         0.65f, 0.45f, 0.65f,
         0.25f, 0.16f, 0.09f);
 
-    /* 10 - Caja cercana a la pared derecha. */
     add_box(vertices, indices, 10,
         3.0f - px, 0.45f, -3.0f - pz,
         0.65f, 0.45f, 0.65f,
         0.29f, 0.18f, 0.10f);
 
-    /* 11 - Torso del protagonista. */
+    /* Protagonista: torso y cabeza. */
     add_box(vertices, indices, 11,
-        0, 1.15f, 0,
+        0, 1.15f + player_y, 0,
         0.30f, 0.48f, 0.18f,
         0.25f, 0.32f, 0.22f);
 
-    /* 12 - Cabeza. */
     add_box(vertices, indices, 12,
-        0, 1.85f, 0,
+        0, 1.85f + player_y, 0,
         0.19f, 0.22f, 0.18f,
         0.72f, 0.52f, 0.35f);
 
-    /* 13 - Brazo izquierdo. */
+    /* Brazos animados. */
     add_box(vertices, indices, 13,
-        -0.39f, 1.18f, 0,
+        -0.39f,
+        1.18f + player_y + sinf(walk_phase) * 0.10f,
+        0,
         0.11f, 0.40f, 0.12f,
         0.25f, 0.32f, 0.22f);
 
-    /* 14 - Brazo derecho. */
     add_box(vertices, indices, 14,
-        0.39f, 1.18f, 0,
+        0.39f,
+        1.18f + player_y - sinf(walk_phase) * 0.10f,
+        0,
         0.11f, 0.40f, 0.12f,
         0.25f, 0.32f, 0.22f);
 
-    /* 15 - Pierna izquierda. */
+    /* Piernas animadas. */
     add_box(vertices, indices, 15,
-        -0.16f, 0.48f, 0,
+        -0.16f,
+        0.48f + player_y - sinf(walk_phase) * 0.14f,
+        0,
         0.13f, 0.38f, 0.14f,
         0.12f, 0.14f, 0.18f);
 
-    /* 16 - Pierna derecha. */
     add_box(vertices, indices, 16,
-        0.16f, 0.48f, 0,
+        0.16f,
+        0.48f + player_y + sinf(walk_phase) * 0.14f,
+        0,
         0.13f, 0.38f, 0.14f,
         0.12f, 0.14f, 0.18f);
 
@@ -529,6 +529,12 @@ static void run_game(
     float player_x = 0.0f;
     float player_z = 0.0f;
 
+    float player_y = 0.0f;
+    float vertical_speed = 0.0f;
+    float walk_phase = 0.0f;
+
+    bool jump_was_pressed = false;
+
     float camera_yaw = 0.0f;
     float camera_pitch = 0.0f;
 
@@ -583,16 +589,54 @@ static void run_game(
                 (sideways * sin_yaw + forward * cos_yaw)
                 * MOVE_SPEED;
 
-            /* Movimiento separado en X y Z:
-               permite deslizarse junto a las cajas. */
             if (!collides(player_x + dx, player_z))
                 player_x += dx;
 
             if (!collides(player_x, player_z + dz))
                 player_z += dz;
+
+            /* Animación de caminar. */
+            if (fabsf(forward) > 0.05f ||
+                fabsf(sideways) > 0.05f) {
+                walk_phase += 0.22f;
+            }
+
+            /* Salto: botón A, una vez por pulsación. */
+            bool jump_pressed =
+                (input.gamepad.buttons & INPUT_GAMEPAD_A) != 0;
+
+            if (jump_pressed && !jump_was_pressed &&
+                player_y <= 0.001f) {
+                vertical_speed = JUMP_SPEED;
+            }
+
+            jump_was_pressed = jump_pressed;
         }
 
-        build_scene(game, player_x, player_z);
+        /* Gravedad y movimiento vertical. */
+        if (player_y > 0.0f || vertical_speed > 0.0f) {
+            vertical_speed -= GRAVITY;
+            player_y += vertical_speed;
+
+            if (player_y >= MAX_JUMP_HEIGHT) {
+                player_y = MAX_JUMP_HEIGHT;
+                if (vertical_speed > 0.0f)
+                    vertical_speed = 0.0f;
+            }
+
+            if (player_y <= 0.0f) {
+                player_y = 0.0f;
+                vertical_speed = 0.0f;
+            }
+        }
+
+        build_scene(
+            game,
+            player_x,
+            player_z,
+            player_y,
+            walk_phase
+        );
 
         uint32_t address;
 
