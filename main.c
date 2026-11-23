@@ -20,7 +20,7 @@ enum {
     BEGIN_TIMEOUT_MS = 5000,
     CLEAR_ARGB = 0xFF090B10,
 
-    BOX_COUNT = 17,
+    BOX_COUNT = 23,
     FACES = 6,
     VERTICES_PER_BOX = 24,
     INDICES_PER_BOX = 36,
@@ -42,9 +42,12 @@ static const float NEAR_PLANE = 0.1f;
 static const float FAR_PLANE = 100.0f;
 static const float PLAYER_RADIUS = 0.38f;
 
-static const float JUMP_SPEED = 0.19f;
+static const float JUMP_SPEED = 0.095f;
 static const float GRAVITY = 0.009f;
-static const float MAX_JUMP_HEIGHT = 1.5f;
+static const float MAX_JUMP_HEIGHT = 0.58f;
+
+static const float ZOMBIE_SPEED = 0.012f;
+static const float ZOMBIE_STOP_DISTANCE = 0.85f;
 
 static const XsdkVertexElement layout[] = {
     {
@@ -214,7 +217,9 @@ static void build_scene(
     float px,
     float pz,
     float player_y,
-    float walk_phase)
+    float walk_phase,
+    float zombie_x,
+    float zombie_z)
 {
     float vertices[VERTICES][VERTEX_FLOATS];
     uint16_t indices[INDICES];
@@ -222,16 +227,19 @@ static void build_scene(
     memset(vertices, 0, sizeof vertices);
     memset(indices, 0, sizeof indices);
 
+    /* Suelo. */
     add_box(vertices, indices, 0,
         -px, -0.18f, -pz,
         6.0f, 0.15f, 8.0f,
         0.25f, 0.27f, 0.27f);
 
+    /* Techo. */
     add_box(vertices, indices, 1,
         -px, 3.15f, -pz,
         6.0f, 0.15f, 8.0f,
         0.20f, 0.22f, 0.25f);
 
+    /* Paredes. */
     add_box(vertices, indices, 2,
         -6.0f - px, 1.48f, -pz,
         0.25f, 1.65f, 8.0f,
@@ -252,11 +260,13 @@ static void build_scene(
         6.0f, 1.65f, 0.25f,
         0.22f, 0.25f, 0.29f);
 
+    /* Puerta. */
     add_box(vertices, indices, 6,
         -px, 1.05f, -7.70f - pz,
         0.85f, 1.05f, 0.08f,
         0.12f, 0.055f, 0.045f);
 
+    /* Muebles y cajas. */
     add_box(vertices, indices, 7,
         -2.0f - px, 0.45f, 2.0f - pz,
         0.65f, 0.45f, 0.65f,
@@ -288,7 +298,7 @@ static void build_scene(
         0.19f, 0.22f, 0.18f,
         0.72f, 0.52f, 0.35f);
 
-    /* Brazos animados. */
+    /* Brazos del protagonista. */
     add_box(vertices, indices, 13,
         -0.39f,
         1.18f + player_y + sinf(walk_phase) * 0.10f,
@@ -303,7 +313,7 @@ static void build_scene(
         0.11f, 0.40f, 0.12f,
         0.25f, 0.32f, 0.22f);
 
-    /* Piernas animadas. */
+    /* Piernas del protagonista. */
     add_box(vertices, indices, 15,
         -0.16f,
         0.48f + player_y - sinf(walk_phase) * 0.14f,
@@ -317,6 +327,40 @@ static void build_scene(
         0,
         0.13f, 0.38f, 0.14f,
         0.12f, 0.14f, 0.18f);
+
+    /* Infectado: torso encorvado. */
+    add_box(vertices, indices, 17,
+        zombie_x - px, 1.10f, zombie_z - pz,
+        0.34f, 0.48f, 0.22f,
+        0.30f, 0.38f, 0.25f);
+
+    /* Cabeza del infectado. */
+    add_box(vertices, indices, 18,
+        zombie_x - px, 1.78f, zombie_z - pz,
+        0.23f, 0.25f, 0.22f,
+        0.34f, 0.43f, 0.29f);
+
+    /* Brazos del infectado. */
+    add_box(vertices, indices, 19,
+        zombie_x - 0.39f - px, 1.12f, zombie_z - pz,
+        0.12f, 0.42f, 0.13f,
+        0.29f, 0.36f, 0.24f);
+
+    add_box(vertices, indices, 20,
+        zombie_x + 0.39f - px, 1.12f, zombie_z - pz,
+        0.12f, 0.42f, 0.13f,
+        0.29f, 0.36f, 0.24f);
+
+    /* Piernas del infectado. */
+    add_box(vertices, indices, 21,
+        zombie_x - 0.17f - px, 0.46f, zombie_z - pz,
+        0.14f, 0.38f, 0.15f,
+        0.18f, 0.20f, 0.16f);
+
+    add_box(vertices, indices, 22,
+        zombie_x + 0.17f - px, 0.46f, zombie_z - pz,
+        0.14f, 0.38f, 0.15f,
+        0.18f, 0.20f, 0.16f);
 
     write_gpu(game->vertices, vertices, VERTICES_BYTES);
     write_gpu(game->indices, indices, INDICES_BYTES);
@@ -345,7 +389,8 @@ static Matrix multiply(const Matrix *a, const Matrix *b)
 static Matrix camera_matrix(
     float aspect,
     float yaw,
-    float pitch)
+    float pitch,
+    float follow_y)
 {
     float f = 1.0f / tanf(FOV * 0.5f);
     float q = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
@@ -380,7 +425,7 @@ static Matrix camera_matrix(
         1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 1, 0,
-        0, -1.7f, -CAMERA_DISTANCE, 1
+        0, -1.7f - follow_y, -CAMERA_DISTANCE, 1
     }};
 
     Matrix rotation = multiply(&turn_x, &turn_y);
@@ -533,6 +578,13 @@ static void run_game(
     float vertical_speed = 0.0f;
     float walk_phase = 0.0f;
 
+    /* Posición inicial del infectado. */
+    float zombie_x = 0.0f;
+    float zombie_z = 4.5f;
+
+    /* Seguimiento vertical suave de la cámara. */
+    float camera_follow_y = 0.0f;
+
     bool jump_was_pressed = false;
 
     float camera_yaw = 0.0f;
@@ -613,6 +665,21 @@ static void run_game(
             jump_was_pressed = jump_pressed;
         }
 
+        /* Movimiento del infectado hacia el protagonista. */
+        float enemy_dx = player_x - zombie_x;
+        float enemy_dz = player_z - zombie_z;
+
+        float enemy_distance =
+            sqrtf(enemy_dx * enemy_dx + enemy_dz * enemy_dz);
+
+        if (enemy_distance > ZOMBIE_STOP_DISTANCE) {
+            zombie_x +=
+                (enemy_dx / enemy_distance) * ZOMBIE_SPEED;
+
+            zombie_z +=
+                (enemy_dz / enemy_distance) * ZOMBIE_SPEED;
+        }
+
         /* Gravedad y movimiento vertical. */
         if (player_y > 0.0f || vertical_speed > 0.0f) {
             vertical_speed -= GRAVITY;
@@ -620,6 +687,7 @@ static void run_game(
 
             if (player_y >= MAX_JUMP_HEIGHT) {
                 player_y = MAX_JUMP_HEIGHT;
+
                 if (vertical_speed > 0.0f)
                     vertical_speed = 0.0f;
             }
@@ -630,12 +698,18 @@ static void run_game(
             }
         }
 
+        /* La cámara acompaña el salto de forma gradual. */
+        camera_follow_y +=
+            (player_y - camera_follow_y) * 0.14f;
+
         build_scene(
             game,
             player_x,
             player_z,
             player_y,
-            walk_phase
+            walk_phase,
+            zombie_x,
+            zombie_z
         );
 
         uint32_t address;
@@ -651,7 +725,8 @@ static void run_game(
         Matrix camera = camera_matrix(
             (float)width / (float)height,
             camera_yaw,
-            camera_pitch
+            camera_pitch,
+            camera_follow_y
         );
 
         draw_game(
