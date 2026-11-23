@@ -18,8 +18,9 @@ enum {
     BUFFERS = 2,
     SWAP_INTERVAL = 1,
     BEGIN_TIMEOUT_MS = 5000,
-    CLEAR_ARGB = 0xFF202020,
-    BOX_COUNT = 8,
+    CLEAR_ARGB = 0xFF090B10,
+
+    BOX_COUNT = 17,
     FACES = 6,
     VERTICES_PER_BOX = 24,
     INDICES_PER_BOX = 36,
@@ -39,6 +40,7 @@ static const float CAMERA_DISTANCE = 6.0f;
 static const float FOV = 1.0f;
 static const float NEAR_PLANE = 0.1f;
 static const float FAR_PLANE = 100.0f;
+static const float PLAYER_RADIUS = 0.38f;
 
 static const XsdkVertexElement layout[] = {
     {
@@ -72,6 +74,21 @@ typedef struct {
     volatile uint32_t *indices;
 } Game;
 
+typedef struct {
+    float x;
+    float z;
+    float half_x;
+    float half_z;
+} Obstacle;
+
+/* Cuatro obstáculos físicos del escenario. */
+static const Obstacle obstacles[] = {
+    {-2.0f,  2.0f, 0.65f, 0.65f},
+    { 2.5f,  3.0f, 0.65f, 0.65f},
+    {-3.0f,  5.0f, 0.65f, 0.65f},
+    { 3.0f, -3.0f, 0.65f, 0.65f}
+};
+
 static void write_gpu(
     volatile uint32_t *memory,
     const void *data,
@@ -103,6 +120,12 @@ static void add_box(
 
     static const uint16_t quad[6] = {
         0,1,2, 2,1,3
+    };
+
+    /* Iluminación sencilla por cara. */
+    static const float shade[FACES] = {
+        0.62f, 0.48f, 1.00f,
+        0.30f, 0.72f, 0.55f
     };
 
     for (uint32_t face = 0; face < FACES; face++) {
@@ -147,9 +170,9 @@ static void add_box(
                     break;
             }
 
-            v[3] = r;
-            v[4] = g;
-            v[5] = b;
+            v[3] = r * shade[face];
+            v[4] = g * shade[face];
+            v[5] = b * shade[face];
             v[6] = c & 1 ? 1.0f : 0.0f;
             v[7] = c & 2 ? 0.0f : 1.0f;
         }
@@ -163,7 +186,29 @@ static void add_box(
     }
 }
 
-static void build_character(Game *game, float px, float pz)
+/* Comprueba límites de habitación y cajas. */
+static bool collides(float x, float z)
+{
+    if (x < -5.55f || x > 5.55f ||
+        z < -7.55f || z > 7.55f) {
+        return true;
+    }
+
+    for (uint32_t i = 0;
+         i < sizeof obstacles / sizeof obstacles[0];
+         i++) {
+        const Obstacle *o = &obstacles[i];
+
+        if (fabsf(x - o->x) < o->half_x + PLAYER_RADIUS &&
+            fabsf(z - o->z) < o->half_z + PLAYER_RADIUS) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void build_scene(Game *game, float px, float pz)
 {
     float vertices[VERTICES][VERTEX_FLOATS];
     uint16_t indices[INDICES];
@@ -171,53 +216,107 @@ static void build_character(Game *game, float px, float pz)
     memset(vertices, 0, sizeof vertices);
     memset(indices, 0, sizeof indices);
 
-    /* Suelo */
+    /* 0 - Suelo de la habitación. */
     add_box(vertices, indices, 0,
         -px, -0.18f, -pz,
-        30.0f, 0.15f, 30.0f,
-        0.22f, 0.24f, 0.22f);
+        6.0f, 0.15f, 8.0f,
+        0.25f, 0.27f, 0.27f);
 
-    /* Torso */
+    /* 1 - Techo. */
     add_box(vertices, indices, 1,
+        -px, 3.15f, -pz,
+        6.0f, 0.15f, 8.0f,
+        0.20f, 0.22f, 0.25f);
+
+    /* 2 - Pared izquierda. */
+    add_box(vertices, indices, 2,
+        -6.0f - px, 1.48f, -pz,
+        0.25f, 1.65f, 8.0f,
+        0.25f, 0.29f, 0.30f);
+
+    /* 3 - Pared derecha. */
+    add_box(vertices, indices, 3,
+        6.0f - px, 1.48f, -pz,
+        0.25f, 1.65f, 8.0f,
+        0.25f, 0.29f, 0.30f);
+
+    /* 4 - Pared del fondo. */
+    add_box(vertices, indices, 4,
+        -px, 1.48f, 8.0f - pz,
+        6.0f, 1.65f, 0.25f,
+        0.22f, 0.25f, 0.29f);
+
+    /* 5 - Pared frontal. */
+    add_box(vertices, indices, 5,
+        -px, 1.48f, -8.0f - pz,
+        6.0f, 1.65f, 0.25f,
+        0.22f, 0.25f, 0.29f);
+
+    /* 6 - Puerta oscura en la pared frontal. */
+    add_box(vertices, indices, 6,
+        -px, 1.05f, -7.70f - pz,
+        0.85f, 1.05f, 0.08f,
+        0.12f, 0.055f, 0.045f);
+
+    /* 7 - Caja izquierda. */
+    add_box(vertices, indices, 7,
+        -2.0f - px, 0.45f, 2.0f - pz,
+        0.65f, 0.45f, 0.65f,
+        0.30f, 0.19f, 0.10f);
+
+    /* 8 - Caja derecha. */
+    add_box(vertices, indices, 8,
+        2.5f - px, 0.45f, 3.0f - pz,
+        0.65f, 0.45f, 0.65f,
+        0.32f, 0.20f, 0.11f);
+
+    /* 9 - Caja del fondo. */
+    add_box(vertices, indices, 9,
+        -3.0f - px, 0.45f, 5.0f - pz,
+        0.65f, 0.45f, 0.65f,
+        0.25f, 0.16f, 0.09f);
+
+    /* 10 - Caja cercana a la pared derecha. */
+    add_box(vertices, indices, 10,
+        3.0f - px, 0.45f, -3.0f - pz,
+        0.65f, 0.45f, 0.65f,
+        0.29f, 0.18f, 0.10f);
+
+    /* 11 - Torso del protagonista. */
+    add_box(vertices, indices, 11,
         0, 1.15f, 0,
         0.30f, 0.48f, 0.18f,
         0.25f, 0.32f, 0.22f);
 
-    /* Cabeza */
-    add_box(vertices, indices, 2,
+    /* 12 - Cabeza. */
+    add_box(vertices, indices, 12,
         0, 1.85f, 0,
         0.19f, 0.22f, 0.18f,
         0.72f, 0.52f, 0.35f);
 
-    /* Brazo izquierdo */
-    add_box(vertices, indices, 3,
+    /* 13 - Brazo izquierdo. */
+    add_box(vertices, indices, 13,
         -0.39f, 1.18f, 0,
         0.11f, 0.40f, 0.12f,
         0.25f, 0.32f, 0.22f);
 
-    /* Brazo derecho */
-    add_box(vertices, indices, 4,
+    /* 14 - Brazo derecho. */
+    add_box(vertices, indices, 14,
         0.39f, 1.18f, 0,
         0.11f, 0.40f, 0.12f,
         0.25f, 0.32f, 0.22f);
 
-    /* Pierna izquierda */
-    add_box(vertices, indices, 5,
+    /* 15 - Pierna izquierda. */
+    add_box(vertices, indices, 15,
         -0.16f, 0.48f, 0,
         0.13f, 0.38f, 0.14f,
         0.12f, 0.14f, 0.18f);
 
-    /* Pierna derecha */
-    add_box(vertices, indices, 6,
+    /* 16 - Pierna derecha. */
+    add_box(vertices, indices, 16,
         0.16f, 0.48f, 0,
         0.13f, 0.38f, 0.14f,
         0.12f, 0.14f, 0.18f);
-
-    /* Caja del escenario */
-    add_box(vertices, indices, 7,
-        2.5f - px, 0.45f, 3.0f - pz,
-        0.65f, 0.45f, 0.65f,
-        0.28f, 0.20f, 0.13f);
 
     write_gpu(game->vertices, vertices, VERTICES_BYTES);
     write_gpu(game->indices, indices, INDICES_BYTES);
@@ -476,16 +575,24 @@ static void run_game(
             float sin_yaw = sinf(camera_yaw);
             float cos_yaw = cosf(camera_yaw);
 
-            player_x +=
+            float dx =
                 (sideways * cos_yaw - forward * sin_yaw)
                 * MOVE_SPEED;
 
-            player_z +=
+            float dz =
                 (sideways * sin_yaw + forward * cos_yaw)
                 * MOVE_SPEED;
+
+            /* Movimiento separado en X y Z:
+               permite deslizarse junto a las cajas. */
+            if (!collides(player_x + dx, player_z))
+                player_x += dx;
+
+            if (!collides(player_x, player_z + dz))
+                player_z += dz;
         }
 
-        build_character(game, player_x, player_z);
+        build_scene(game, player_x, player_z);
 
         uint32_t address;
 
@@ -512,7 +619,7 @@ static void run_game(
 
 int main(void)
 {
-    xsdk_log_write("THE LAST SURVIVOR: protagonista 3D");
+    xsdk_log_write("THE LAST SURVIVOR: habitacion 3D");
 
     NTSTATUS status = xsdk_splash_show(SPLASH_MS);
 
@@ -549,7 +656,7 @@ int main(void)
         return 1;
     }
 
-    xsdk_log_write("Protagonista 3D iniciado");
+    xsdk_log_write("Habitacion de terror iniciada");
 
     run_game(&game, width, height);
 
