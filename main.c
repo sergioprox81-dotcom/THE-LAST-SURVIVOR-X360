@@ -468,7 +468,7 @@ static void run_game(
             float sideways = 0.0f;
 
             if (fabsf(ly) > DEAD_ZONE)
-                forward = ly / 32768.0f;
+                forward = -ly / 32768.0f;
 
             if (fabsf(lx) > DEAD_ZONE)
                 sideways = lx / 32768.0f;
