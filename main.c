@@ -5,7 +5,7 @@
  */
 
 #include <stdint.h>
-
+#include <stddef.h>
 #include "the_last_survivor_shaders.h"
 #include "xsdk/gpu.h"
 #include "xsdk/kernel.h"
