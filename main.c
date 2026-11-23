@@ -40,12 +40,6 @@ static const float FOV = 1.0f;
 static const float NEAR_PLANE = 0.1f;
 static const float FAR_PLANE = 100.0f;
 
-static const float face_normals[FACES][3] = {
-    { 1, 0, 0}, {-1, 0, 0},
-    { 0, 1, 0}, { 0,-1, 0},
-    { 0, 0, 1}, { 0, 0,-1}
-};
-
 static const XsdkVertexElement layout[] = {
     {
         .usage = XSDK_USAGE_POSITION,
@@ -249,7 +243,10 @@ static Matrix multiply(const Matrix *a, const Matrix *b)
     return out;
 }
 
-static Matrix camera_matrix(float aspect, float yaw, float pitch)
+static Matrix camera_matrix(
+    float aspect,
+    float yaw,
+    float pitch)
 {
     float f = 1.0f / tanf(FOV * 0.5f);
     float q = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
@@ -291,26 +288,6 @@ static Matrix camera_matrix(float aspect, float yaw, float pitch)
     Matrix position = multiply(&away, &rotation);
 
     return multiply(&projection, &position);
-}
-
-    float f = 1.0f / tanf(FOV * 0.5f);
-    float q = FAR_PLANE / (NEAR_PLANE - FAR_PLANE);
-
-    const Matrix projection = {{
-        f / aspect, 0, 0, 0,
-        0, f, 0, 0,
-        0, 0, q, -1,
-        0, 0, NEAR_PLANE * q, 0
-    }};
-
-    const Matrix camera = {{
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, -1.7f, -CAMERA_DISTANCE, 1
-    }};
-
-    return multiply(&projection, &camera);
 }
 
 static bool make_game(Game *game)
@@ -445,7 +422,10 @@ static void draw_game(
     xsdk_gpu_resolve(address, width, height, CLEAR_ARGB);
 }
 
-static void run_game(Game *game, uint32_t width, uint32_t height)
+static void run_game(
+    Game *game,
+    uint32_t width,
+    uint32_t height)
 {
     float player_x = 0.0f;
     float player_z = 0.0f;
@@ -461,14 +441,12 @@ static void run_game(Game *game, uint32_t width, uint32_t height)
         INPUT_STATE input = {0};
 
         if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
-
             if (input.gamepad.buttons & INPUT_GAMEPAD_BACK) {
                 break;
             }
 
             float lx = input.gamepad.thumb_lx;
             float ly = input.gamepad.thumb_ly;
-
             float rx = input.gamepad.thumb_rx;
             float ry = input.gamepad.thumb_ry;
 
@@ -524,50 +502,6 @@ static void run_game(Game *game, uint32_t width, uint32_t height)
             camera_yaw,
             camera_pitch
         );
-
-        draw_game(
-            game, &camera, address, width, height);
-
-        xsdk_present_end();
-    }
-}
-    float player_x = 0.0f;
-    float player_z = 0.0f;
-
-    const Matrix camera = camera_matrix(
-        (float)width / (float)height);
-
-    for (;;) {
-        INPUT_STATE input = {0};
-
-        if (XamInputGetState(0, 0, &input) == ERROR_SUCCESS) {
-            if (input.gamepad.buttons & INPUT_GAMEPAD_BACK) {
-                break;
-            }
-
-            float x = input.gamepad.thumb_lx / 32768.0f;
-            float z = input.gamepad.thumb_ly / 32768.0f;
-
-            if (x > 0.20f || x < -0.20f) {
-                player_x += x * MOVE_SPEED;
-            }
-
-            if (z > 0.20f || z < -0.20f) {
-                player_z += z * MOVE_SPEED;
-            }
-        }
-
-        build_character(game, player_x, player_z);
-
-        uint32_t address;
-
-        NTSTATUS status = xsdk_present_begin(
-            &address, BEGIN_TIMEOUT_MS);
-
-        if (!NT_SUCCESS(status)) {
-            xsdk_log_write("Error preparando pantalla");
-            return;
-        }
 
         draw_game(
             game, &camera, address, width, height);
