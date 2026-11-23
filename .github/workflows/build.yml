@@ -22,10 +22,19 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/xenosworks/xsdk.git "$HOME/xsdk"
 
-      - name: Build Xbox 360 toolchain
+            - name: Build glslang for Xbox shaders
         run: |
-          cd "$HOME/xsdk"
-          PREFIX="$HOME/xsdk-gcc" WORK="$HOME/xsdk-gcc-work" JOBS=2 bash tools/toolchain/build.sh
+          git clone --depth 1 --branch xenon https://github.com/xenosworks/glslang-xenon.git "$HOME/glslang-xenon"
+          cd "$HOME/glslang-xenon"
+          python3 update_glslang_sources.py
+          cmake -S "$HOME/glslang-xenon" -B "$HOME/glslang-xenon/build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_OPT=ON \
+            -DSPIRV_SKIP_EXECUTABLES=ON \
+            -DGLSLANG_TESTS=OFF
+          cmake --build "$HOME/glslang-xenon/build" --parallel 2
+          cp "$HOME/glslang-xenon/build/StandAlone/glslang" "$HOME/xsdk-gcc/bin/glslang"
+          echo "$HOME/xsdk-gcc/bin" >> "$GITHUB_PATH"
 
       - name: Build xsdk
         run: |
