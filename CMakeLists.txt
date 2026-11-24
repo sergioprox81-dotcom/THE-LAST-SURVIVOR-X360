@@ -18,7 +18,6 @@ xsdk_add_shaders(the_last_survivor
     ui.vert
     ui.frag
 )
-)
 
 xsdk_add_xex(the_last_survivor
     TITLE_ID 0x53565331
