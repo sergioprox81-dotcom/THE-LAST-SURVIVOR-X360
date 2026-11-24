@@ -6,7 +6,6 @@ add_executable(the_last_survivor
     main.c
     ui.c
 )
-)
 
 set_target_properties(the_last_survivor PROPERTIES
     C_STANDARD 17
